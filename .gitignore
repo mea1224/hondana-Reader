@@ -11,4 +11,3 @@ resources/pdfium/*.dll
 resources/pdfium/*.so
 test-results/
 .codex/
-/README.md
