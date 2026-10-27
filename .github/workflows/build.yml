@@ -1,0 +1,40 @@
+name: Build hondana Reader
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - run: npm ci --ignore-scripts
+      - run: npm run electron:install
+      - run: npm run pdfium:download
+      - run: npm run native:build -- --release
+      - run: npm run native:test
+      - run: npm run build
+      - run: npm run check
+      - run: npx electron-builder --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hondana-reader-${{ matrix.target }}
+          path: release/*
+          if-no-files-found: error

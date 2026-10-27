@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+release/
+native/*.node
+rust-core/target/
+*.tsbuildinfo
+.DS_Store
+resources/pdfium/*.dylib
+resources/pdfium/*.dll
+resources/pdfium/*.so
+test-results/
+.codex/
+/README.md

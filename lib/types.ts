@@ -1,0 +1,30 @@
+export type FileType = 'epub' | 'pdf' | 'md';
+export type Color = 'coral' | 'yellow' | 'blue' | 'green';
+export type Location = { scope: string; ratio: number; percent: number; page?: number };
+export type Book = {
+  id: string; title: string; author: string; fileType: FileType; filePath: string;
+  coverPath: string | null; categoryId: string | null; createdAt: string;
+  updatedAt: string | null; progress: Location | null;
+};
+export type Category = { id: string; name: string };
+export type Library = { books: Book[]; categories: Category[] };
+export type Note = { id: string; bookId: string; rangeLoc: string; selectedText: string; color: Color; content: string; updatedAt: string };
+export type ImagePoint = { x: number; y: number };
+export type ImageStroke = { points: ImagePoint[]; width: number };
+export type ImageMark = { imageKey: string; scope: string; strokes: ImageStroke[] };
+export type TextMark = { scope: string; start: number; end: number; quote?: string; displayQuote?: string };
+export type Anchor = { scope: string; start?: number; end?: number; quote?: string; displayQuote?: string; rect?: { x: number; y: number; width: number; height: number }; textMarks?: TextMark[]; imageMarks?: ImageMark[] };
+export type ImageAnnotation = { noteId: string; color: Color; strokes: ImageStroke[] };
+export type TocEntry = { label: string; href: string; children: TocEntry[] };
+export type ChapterAnchor = { id: string; block: number; line?: number };
+export type Chapter = { path: string; text: string; anchors?: ChapterAnchor[] };
+export type BookDocument = { kind: FileType; markdown?: string; toc: TocEntry[]; chapters: { path: string; label: string }[]; pageCount: number };
+export type ImportResult = { ids: string[]; errors: { path: string; message: string }[] };
+export type Bridge = {
+  dispatch(operation: string, payload?: unknown): Promise<unknown>;
+  importBooks(): Promise<ImportResult>;
+  readResource(bookId: string, resourcePath: string): Promise<Uint8Array>;
+  renderPdf(bookId: string, page: number, width: number): Promise<Uint8Array>;
+  openExternal(url: string): Promise<void>;
+  exportMarkdown(fileName: string, content: string): Promise<boolean>;
+};

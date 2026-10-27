@@ -1,0 +1,6 @@
+{
+  "tag": "chromium/7543",
+  "asset": "pdfium-mac-arm64.tgz",
+  "assetDigest": "sha256:41c269723b4711793de70ff34e65c00fa79907d6c023741837579e906b846faa",
+  "libraryDigest": "858f0676a1ac5b666673fc6e56b4401f95907a3fc66fa4635d626097a04c205b"
+}

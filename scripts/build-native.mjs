@@ -1,0 +1,16 @@
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, copyFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const root = fileURLToPath(new URL('..', import.meta.url));
+const release = process.argv.includes('--release');
+const env = { ...process.env };
+if (process.platform === 'darwin' && !env.DEVELOPER_DIR && existsSync('/Library/Developer/CommandLineTools')) env.DEVELOPER_DIR = '/Library/Developer/CommandLineTools';
+execFileSync('cargo', ['build', '--locked', '--manifest-path', join(root, 'rust-core/Cargo.toml'), ...(release ? ['--release'] : [])], { cwd:root, env, stdio:'inherit' });
+const extension = process.platform === 'win32' ? 'dll' : process.platform === 'darwin' ? 'dylib' : 'so';
+const source = join(root, 'rust-core/target', release ? 'release' : 'debug', `${process.platform === 'win32' ? '' : 'lib'}hondana_core.${extension}`);
+mkdirSync(join(root, 'native'), { recursive:true });
+const suffix = process.platform === 'win32' ? '-msvc' : process.platform === 'linux' ? '-gnu' : '';
+const target = `hondana_core.${process.platform}-${process.arch}${suffix}.node`;
+copyFileSync(source, join(root, 'native', target));
+console.log(`Native 模块已写入 native/${target}`);
