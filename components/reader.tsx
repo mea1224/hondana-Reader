@@ -11,6 +11,8 @@ import { hasRubyText, quoteRangeWithRuby } from '../lib/ruby-text';
 import { addImageStroke, undoImageStroke } from '../lib/image-annotations';
 import { AnnotatedImage, ImageAnnotationContext } from './annotated-image';
 import { RubyText } from './ruby-text';
+import { useReaderZoom } from './use-reader-zoom';
+import { ReaderZoomControls } from './reader-zoom-controls';
 import type { Anchor, Book, BookDocument, Chapter, ChapterAnchor, Color, ImageStroke, Location, Note, TocEntry } from '../lib/types';
 
 const colors: Color[] = ['coral', 'yellow', 'blue', 'green'];
@@ -28,7 +30,22 @@ function PdfPage({ bookId, page, onImageNote }: { bookId: string; page: number; 
   const [error, setError] = useState('');
   const [visible, setVisible] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => { const element = ref.current; if (!element) return; const observer = new IntersectionObserver(([entry]) => { setVisible(entry.isIntersecting); }, { rootMargin: '1000px' }); observer.observe(element); return () => observer.disconnect(); }, []);
+  useEffect(() => {
+    const element = ref.current; if (!element) return;
+    const viewport = element.closest<HTMLElement>('.reading-canvas');
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!viewport?.dataset.zooming) setVisible(entry.isIntersecting);
+    }, { root: viewport, rootMargin: '1000px' });
+    const afterZoom = () => {
+      if (!viewport) return;
+      const page = element.getBoundingClientRect();
+      const view = viewport.getBoundingClientRect();
+      setVisible(page.bottom >= view.top - 1000 && page.top <= view.bottom + 1000);
+    };
+    observer.observe(element);
+    viewport?.addEventListener('reader-zoom-end', afterZoom);
+    return () => { observer.disconnect(); viewport?.removeEventListener('reader-zoom-end', afterZoom); };
+  }, []);
   useEffect(() => {
     if (!visible) { setSrc(''); return; } let disposed = false; let objectUrl = '';
     void window.hondana?.renderPdf(bookId, page, 1200).then(bytes => {
@@ -56,7 +73,7 @@ export default function Reader({ book, onBack }: { book: Book; onBack: () => voi
   const [outlineOpen, setOutlineOpen] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [scale, setScale] = useState(100);
+  const { viewportRef: readingRef, contentRef: zoomRef, surfaceRef: zoomSurfaceRef, zoom } = useReaderZoom();
   const [anchor, setAnchor] = useState<Anchor | null>(null);
   const [selectionNoteId, setSelectionNoteId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'highlights' | 'notes'>('all');
@@ -64,7 +81,6 @@ export default function Reader({ book, onBack }: { book: Book; onBack: () => voi
   const [page, setPage] = useState(1);
   const [saveStatus, setSaveStatus] = useState('已保存');
   const [markdownOutline, setMarkdownOutline] = useState<TocEntry[]>([]);
-  const readingRef = useRef<HTMLElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<BookDocument | null>(null);
   const scopeRef = useRef(scope); scopeRef.current = scope;
@@ -188,7 +204,7 @@ export default function Reader({ book, onBack }: { book: Book; onBack: () => voi
           const section = Array.from(element?.querySelectorAll<HTMLElement>('[data-epub-path]') || []).find(item => item.dataset.epubPath === book.progress?.scope);
           if (element && section) {
             const offset = section.getBoundingClientRect().top - element.getBoundingClientRect().top + element.scrollTop;
-            element.scrollTop = offset + (book.progress?.ratio || 0) * Math.max(0, section.scrollHeight - element.clientHeight);
+            element.scrollTop = offset + (book.progress?.ratio || 0) * Math.max(0, section.getBoundingClientRect().height - element.clientHeight);
           }
         } else { const element = readingRef.current; element.scrollTop = (book.progress?.ratio || 0) * Math.max(0, element.scrollHeight - element.clientHeight); }
       }
@@ -284,7 +300,7 @@ export default function Reader({ book, onBack }: { book: Book; onBack: () => voi
     catch (e) { if (requestId === sequence.current) { setContentError({ message: errorMessage(e), href }); report(e); } } finally { if (requestId === sequence.current) setLoading(false); }
   }
   function onScroll() {
-    const element = readingRef.current; if (!element || restoring.current || loading || !doc || contentError) return;
+    const element = readingRef.current; if (!element || zoom.isZooming || restoring.current || loading || !doc || contentError) return;
     const ratio = element.scrollHeight <= element.clientHeight ? 1 : element.scrollTop / Math.max(1, element.scrollHeight - element.clientHeight);
     let activeScope = scope; let current = doc.chapters.findIndex(c => c.path === scope) + 1;
     let percent = ratio * 100;
@@ -297,7 +313,7 @@ export default function Reader({ book, onBack }: { book: Book; onBack: () => voi
         current = doc.chapters.findIndex(chapter => chapter.path === activeScope) + 1;
         if (activeScope !== scopeRef.current) { scopeRef.current = activeScope; setScope(activeScope); }
         const sectionOffset = active.getBoundingClientRect().top - rect.top + element.scrollTop;
-        const sectionScrollableHeight = Math.max(1, active.scrollHeight - element.clientHeight);
+        const sectionScrollableHeight = Math.max(1, active.getBoundingClientRect().height - element.clientHeight);
         const sectionRatio = Math.max(0, Math.min(1, (element.scrollTop - sectionOffset) / sectionScrollableHeight));
         percent = ((Math.max(0, current - 1) + sectionRatio) / Math.max(1, doc.chapters.length)) * 100;
       }
@@ -313,7 +329,7 @@ export default function Reader({ book, onBack }: { book: Book; onBack: () => voi
       const section = Array.from(element.querySelectorAll<HTMLElement>('[data-epub-path]')).find(item => item.dataset.epubPath === activeScope);
       if (section) {
         const sectionOffset = section.getBoundingClientRect().top - element.getBoundingClientRect().top + element.scrollTop;
-        progressRatio = Math.max(0, Math.min(1, (element.scrollTop - sectionOffset) / Math.max(1, section.scrollHeight - element.clientHeight)));
+        progressRatio = Math.max(0, Math.min(1, (element.scrollTop - sectionOffset) / Math.max(1, section.getBoundingClientRect().height - element.clientHeight)));
       }
     }
     pendingProgress.current = { scope: activeScope, ratio: progressRatio, percent: Math.min(100, Math.max(0, percent)), page: current };
@@ -454,17 +470,21 @@ export default function Reader({ book, onBack }: { book: Book; onBack: () => voi
   }
   const visibleNotes = notes.filter(note => filter === 'all' || (filter === 'highlights' ? !!note.selectedText || !!readAnchor(note.rangeLoc)?.imageMarks?.length || !!(readAnchor(note.rangeLoc) && textAnchors(readAnchor(note.rangeLoc)!).length) : !!plainNoteText(note.content).trim()));
       return <main className="reader-shell">
-    <header className="reader-topbar"><div className="reader-left"><button className="icon-button" onClick={() => void leave()} aria-label="返回书架"><ArrowLeft size={18} /></button><div className="reader-book"><div className="mini-cover">{book.title.slice(0, 1)}</div><div><strong>{book.title}</strong><span>{book.author || book.fileType.toUpperCase()}</span></div></div></div><div className="reader-controls"><button className="icon-button" onClick={() => setOutlineOpen(!outlineOpen)} aria-label="切换目录"><ListTree size={17} /></button><button className="reader-control" onClick={() => setScale(v => Math.max(80, v - 10))} aria-label="缩小">A−</button><span className="reader-scale">{scale}%</span><button className="reader-control" onClick={() => setScale(v => Math.min(160, v + 10))} aria-label="放大">A+</button><span className="control-divider" /><button className="icon-button" onClick={() => setNotesOpen(!notesOpen)} aria-label="切换笔记"><PanelRight size={17} /></button></div></header>
+    <header className="reader-topbar"><div className="reader-left"><button className="icon-button" onClick={() => void leave()} aria-label="返回书架"><ArrowLeft size={18} /></button><div className="reader-book"><div className="mini-cover">{book.title.slice(0, 1)}</div><div><strong>{book.title}</strong><span>{book.author || book.fileType.toUpperCase()}</span></div></div></div><div className="reader-controls"><button className="icon-button" onClick={() => setOutlineOpen(!outlineOpen)} aria-label="切换目录"><ListTree size={17} /></button><ReaderZoomControls zoom={zoom} /><span className="control-divider" /><button className="icon-button" onClick={() => setNotesOpen(!notesOpen)} aria-label="切换笔记"><PanelRight size={17} /></button></div></header>
     {error && <div role="alert" className="reader-alert"><span>{error}</span><button className="icon-button" onClick={() => setError('')} aria-label="关闭错误"><X size={15} /></button></div>}
     <div className="reader-layout">
       {outlineOpen && <aside className="outline-panel"><div className="panel-heading"><span>目录</span><button className="icon-button" onClick={() => setOutlineOpen(false)} aria-label="隐藏目录"><X size={15} /></button></div><div className="outline-progress"><div><span>阅读进度</span><strong>{Math.round(progress)}%</strong></div><div className="progress-line"><span style={{ width: `${progress}%` }} /></div></div><div className="outline-list">{outline.length ? <Outline entries={outline} navigate={href => void navigate(href)} active={scope} /> : <p className="sidebar-hint">Markdown 文档<br />自由滚动阅读。</p>}</div><div className="outline-bottom">{doc?.kind === 'pdf' ? `第 ${page} / ${doc.pageCount} 页` : doc?.kind === 'epub' ? `第 ${currentIndex + 1} / ${doc.chapters.length} 节` : `${Math.round(progress)}% 已读`}</div></aside>}
       <article ref={readingRef} className={`reading-canvas ${selectionNoteId ? 'reader-marking' : ''}`} onScroll={onScroll} onPointerUp={e => { if (!(e.target as HTMLElement).closest('.annotated-image')) scheduleReadingSelectionCapture(); }} onMouseUp={e => { if (!(e.target as HTMLElement).closest('.annotated-image')) scheduleReadingSelectionCapture(); }} onTouchEnd={e => { if (!(e.target as HTMLElement).closest('.annotated-image')) scheduleReadingSelectionCapture(); }} onMouseMove={e => {
+        if (zoom.isZooming) return;
         for (const [id, ranges] of noteRanges.current) { if (ranges.some(range => Array.from(range.getClientRects()).some(rect => e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom))) { setActiveNote(id); break; } }
       }}>
         <ImageAnnotationContext.Provider value={imageAnnotationContext}>
-        <div className="reading-breadcrumb">{book.title} <ChevronRight size={13} /> {doc?.kind === 'epub' ? `第 ${currentIndex + 1} 节` : book.fileType.toUpperCase()}</div>
-        {loading ? <div className="reader-loading"><LoaderCircle className="spin" /><span>正在解析正文…</span></div> : contentError ? <div role="alert" className="reader-error"><h2>{contentError.href ? "无法打开这一节" : "无法打开这本书"}</h2><p>{contentError.message}</p><button className="button subtle" onClick={() => contentError.href ? void navigate(contentError.href) : setLoadAttempt(value => value + 1)}>重试</button></div> : !doc ? <div className="reader-error"><h2>无法打开这本书</h2><p>{error || '请检查原始文件是否存在。'}</p><button className="button subtle" onClick={onBack}>返回书架</button></div> : doc.kind === 'pdf' ? <div className="pdf-pages" style={{ width: `${Math.min(98, scale * .8)}%` }}>{Array.from({ length: doc.pageCount }, (_, i) => <PdfPage key={i} bookId={book.id} page={i} onImageNote={target => void createNote('blue', target)} />)}</div> : doc.kind === 'epub' ? <div ref={textRef} className="article-content markdown-content epub-scroll-content" style={{ fontSize: `${16 * scale / 100}px` }}>{epubSections.map(section => <section key={section.path} data-epub-path={section.path} className="epub-chapter"><Markdown text={section.text} anchors={section.anchors || []} resourceBookId={book.id} imageScope={section.path} />{section.error && <div role="alert" className="reader-inline-error"><strong>本节无法解析</strong><span>{section.error}</span></div>}</section>)}</div> : <div ref={textRef} className="article-content markdown-content" style={{ fontSize: `${16 * scale / 100}px` }}><Markdown text={body} anchors={chapterAnchors} /></div>}
+        <div ref={zoomSurfaceRef} className="reader-zoom-surface">
+        <div ref={zoomRef} className="reader-zoom-content">
+        {loading ? <div className="reader-loading"><LoaderCircle className="spin" /><span>正在解析正文…</span></div> : contentError ? <div role="alert" className="reader-error"><h2>{contentError.href ? "无法打开这一节" : "无法打开这本书"}</h2><p>{contentError.message}</p><button className="button subtle" onClick={() => contentError.href ? void navigate(contentError.href) : setLoadAttempt(value => value + 1)}>重试</button></div> : !doc ? <div className="reader-error"><h2>无法打开这本书</h2><p>{error || '请检查原始文件是否存在。'}</p><button className="button subtle" onClick={onBack}>返回书架</button></div> : doc.kind === 'pdf' ? <div className="pdf-pages" style={{ width: '80%' }}>{Array.from({ length: doc.pageCount }, (_, i) => <PdfPage key={i} bookId={book.id} page={i} onImageNote={target => void createNote('blue', target)} />)}</div> : doc.kind === 'epub' ? <div ref={textRef} className="article-content markdown-content epub-scroll-content">{epubSections.map(section => <section key={section.path} data-epub-path={section.path} className="epub-chapter"><Markdown text={section.text} anchors={section.anchors} resourceBookId={book.id} imageScope={section.path} />{section.error && <div role="alert" className="reader-inline-error"><strong>本节无法解析</strong><span>{section.error}</span></div>}</section>)}</div> : <div ref={textRef} className="article-content markdown-content"><Markdown text={body} anchors={chapterAnchors} /></div>}
         <div className="reader-page-footer"><span>{book.fileType.toUpperCase()}</span><span>{Math.round(progress)}% 已读</span></div>
+        </div>
+        </div>
         </ImageAnnotationContext.Provider>
       </article>
       {notesOpen && <aside className="notes-panel" onContextMenu={e => { if (!(e.target as HTMLElement).closest('.note-card')) { e.preventDefault(); void createNote('yellow', null); } }}><div className="notes-header"><div><span className="panel-eyebrow">笔记与高亮</span><h2>{notes.length} 条记录</h2></div><div className="notes-header-actions"><button className="icon-button" onClick={() => void exportNotes()} aria-label="导出笔记为 Markdown" title="导出 Markdown"><Download size={16} /></button><button className="icon-button" onClick={() => void createNote()} aria-label="新建笔记"><Plus size={17} /></button></div></div>{selectionNoteId && <div className="note-selection-mode" role="status"><span>拖选文字可继续添加高亮，也可跨图片或跨页涂抹</span><button onClick={cancelNoteHighlight}>完成</button></div>}<div className="notes-filter">{([['all','全部'],['highlights','高亮'],['notes','笔记']] as const).map(([value, label]) => <button key={value} className={filter === value ? 'filter-active' : ''} onClick={() => setFilter(value)}>{label}</button>)}</div><div className="notes-list">{!visibleNotes.length && <p className="notes-hint">选择颜色后可标记正文，<br />也可直接在图片上涂抹。</p>}{visibleNotes.map(note => { const location = readAnchor(note.rangeLoc); const marks = location?.imageMarks || []; const textMarks = location ? textAnchors(location) : []; const markCount = marks.reduce((total, item) => total + item.strokes.length, 0); const locationCount = marks.length + textMarks.length; const quotes = textMarks.map((mark, index) => mark.displayQuote || legacyRubyQuotes[note.id]?.[index] || mark.quote).filter((quote): quote is string => !!quote); return <div className={`note-card note-${note.color} ${activeNote === note.id ? 'active' : ''}`} key={note.id} onDoubleClick={() => focusNote(note)} onClick={() => setActiveNote(note.id)}><div className="note-card-top"><button className="note-locate" onClick={event => { event.stopPropagation(); focusNote(note); }}>{locationCount ? `定位标记 · ${locationCount} 处 ↗` : '定位原文 ↗'}</button><button className={`note-draw ${selectionNoteId === note.id ? 'active' : ''}`} aria-label="继续使用此笔记标记文字或图片" title="继续使用此笔记标记文字或图片" onClick={event => { event.stopPropagation(); activateImageDrawing(note); }}><Paintbrush size={13} /><span>{selectionNoteId === note.id ? '标记中' : '继续标记'}</span></button><span>{new Date(note.updatedAt).toLocaleDateString('zh-CN')}</span></div>{(quotes.length ? quotes : note.selectedText ? [note.selectedText] : []).map((quote, index) => <p className="note-quote" key={`${note.id}-quote-${index}`}>“<RubyText text={quote} />”</p>)}{markCount > 0 && <p className="image-mark-label">图片涂抹标记 · {markCount} 笔 / {marks.length} 处</p>}<NoteEditor value={note.content} onChange={content => updateNote(note, { content })} onBlur={() => flushNote(note.id)} /><div className="note-card-bottom"><div className="color-options">{colors.map(color => <button key={color} className={`color-swatch swatch-${color} ${note.color === color ? 'chosen' : ''} ${selectionNoteId === note.id && note.color === color ? 'drawing' : ''}`} aria-label={`选择${colorNames[color]}并标记`} aria-pressed={note.color === color} title={`选择${colorNames[color]}后可拖选正文或在图片上涂抹`} onMouseDown={event => event.preventDefault()} onClick={() => armNoteHighlight(note, color)} />)}</div>{markCount > 0 && <button className="undo-image-mark" aria-label="撤销最近的图片标记" title="撤销最近的图片标记" onClick={() => undoLastImageStroke(note)}>↶</button>}<button aria-label="删除笔记" onClick={() => void removeNote(note.id)}><Trash2 size={13} /></button></div></div>; })}</div><button className="add-note-button" onClick={() => void createNote()}><Plus size={16} /> 添加笔记</button><button className="save-status" onClick={() => { for (const id of dirtyNotes.current.keys()) flushNote(id); }}>{saveStatus}</button></aside>}

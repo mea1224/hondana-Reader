@@ -6,4 +6,13 @@ contextBridge.exposeInMainWorld('hondana', {
   renderPdf: (bookId, page, width) => ipcRenderer.invoke('core:render-pdf', bookId, page, width),
   openExternal: (url) => ipcRenderer.invoke('shell:open-external', url),
   exportMarkdown: (fileName, content) => ipcRenderer.invoke('notes:export-markdown', fileName, content),
+  windowState: () => ipcRenderer.invoke('window:state'),
+  minimize: () => ipcRenderer.invoke('window:minimize'),
+  toggleMaximize: () => ipcRenderer.invoke('window:toggle-maximize'),
+  close: () => ipcRenderer.invoke('window:close'),
+  onWindowState: (callback) => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on('window:state-changed', listener);
+    return () => ipcRenderer.removeListener('window:state-changed', listener);
+  },
 });

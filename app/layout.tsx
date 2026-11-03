@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { WindowFrame } from '../components/window-frame';
 
 export const metadata: Metadata = {
   title: 'hondana Reader',
@@ -7,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="zh-CN"><body>{children}</body></html>;
+  return <html lang="zh-CN"><body><WindowFrame>{children}</WindowFrame></body></html>;
 }

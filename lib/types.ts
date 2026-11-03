@@ -20,7 +20,13 @@ export type ChapterAnchor = { id: string; block: number; line?: number };
 export type Chapter = { path: string; text: string; anchors?: ChapterAnchor[] };
 export type BookDocument = { kind: FileType; markdown?: string; toc: TocEntry[]; chapters: { path: string; label: string }[]; pageCount: number };
 export type ImportResult = { ids: string[]; errors: { path: string; message: string }[] };
+export type WindowState = { maximized: boolean; fullscreen: boolean };
 export type Bridge = {
+  windowState(): Promise<WindowState>;
+  minimize(): Promise<void>;
+  toggleMaximize(): Promise<WindowState>;
+  close(): Promise<void>;
+  onWindowState(callback: (state: WindowState) => void): () => void;
   dispatch(operation: string, payload?: unknown): Promise<unknown>;
   importBooks(): Promise<ImportResult>;
   readResource(bookId: string, resourcePath: string): Promise<Uint8Array>;

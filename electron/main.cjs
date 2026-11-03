@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell, protocol, net, session } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell, protocol, net, session } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
@@ -21,13 +21,22 @@ function checkSender(event) {
   if (!origin || event.senderFrame !== mainWindow?.webContents.mainFrame || (dev ? new URL(origin).origin !== 'http://127.0.0.1:3210' : !origin.startsWith('hondana://app/'))) throw new Error('不受信任的 IPC 来源');
 }
 function handle(channel, handler) { ipcMain.handle(channel, (event, ...args) => { checkSender(event); return handler(...args); }); }
+function windowState() { return { maximized: mainWindow.isMaximized(), fullscreen: mainWindow.isFullScreen() }; }
 function createWindow() {
-  mainWindow = new BrowserWindow({ width: 1440, height: 920, minWidth: 800, minHeight: 600, title: 'hondana Reader', icon: path.join(__dirname, 'icon.png'), backgroundColor: '#fbfaf8', webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true } });
+  mainWindow = new BrowserWindow({ width: 1440, height: 920, minWidth: 800, minHeight: 600, title: 'hondana Reader', icon: path.join(__dirname, 'icon.png'), frame: false, roundedCorners: true, transparent: true, backgroundColor: '#00000000', webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true } });
+  mainWindow.setMenuBarVisibility(false);
+  for (const event of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) {
+    mainWindow.on(event, () => mainWindow.webContents.send('window:state-changed', windowState()));
+  }
   mainWindow.loadURL(dev ? 'http://127.0.0.1:3210' : 'hondana://app/');
   mainWindow.webContents.setWindowOpenHandler(({ url }) => { try { void shell.openExternal(externalUrl(url)); } catch {} return { action: 'deny' }; });
   mainWindow.webContents.on('will-navigate', (event, url) => { if (url !== mainWindow.webContents.getURL()) { event.preventDefault(); try { void shell.openExternal(externalUrl(url)); } catch {} } });
 }
 app.whenReady().then(() => {
+  // macOS keeps its screen-level application menu so standard editing shortcuts work.
+  Menu.setApplicationMenu(process.platform === 'darwin'
+    ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }])
+    : null);
   fs.mkdirSync(app.getPath('userData'), { recursive: true });
   core = new CoreClient({ userData: app.getPath('userData'), nativePath: nativePath() });
   const outputRoot = path.join(__dirname, '..', 'out');
@@ -55,6 +64,16 @@ app.whenReady().then(() => {
   handle('core:render-pdf', (bookId, page, width) => { if (typeof bookId !== 'string' || !Number.isInteger(page) || page < 0 || !Number.isInteger(width) || width < 200 || width > 1800) throw new Error('无效 PDF 请求'); return core.dispatch('render-pdf', { bookId, page, width, pdfiumDir:pdfiumDir() }); });
   handle('dialog:import', async () => { const result = await dialog.showOpenDialog(mainWindow, { properties:['openFile','multiSelections'], filters:[{ name:'图书', extensions:['epub','pdf','md','markdown'] }] }); return result.canceled ? { ids:[], errors:[] } : core.dispatch('import', { paths:result.filePaths }); });
   handle('shell:open-external', url => shell.openExternal(externalUrl(url)));
+  handle('window:state', windowState);
+  handle('window:minimize', () => mainWindow.minimize());
+  handle('window:toggle-maximize', () => {
+    if (mainWindow.isFullScreen()) mainWindow.setFullScreen(false);
+    else if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    else mainWindow.maximize();
+    return windowState();
+  });
+  // close() preserves the reader's beforeunload save flow.
+  handle('window:close', () => mainWindow.close());
   handle('notes:export-markdown', async (fileName, content) => {
     if (typeof fileName !== 'string' || typeof content !== 'string' || Buffer.byteLength(content, 'utf8') > 16 * 1024 * 1024) throw new Error('无效的笔记导出内容');
     const safeName = path.basename(fileName.replace(/[\u0000-\u001f<>:"/\\|?*]/g, '-')).replace(/\.md$/i, '') || 'hondana-笔记';

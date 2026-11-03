@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { epubAnchors, headingIds, rubyAnnotations } from '../lib/markdown';
@@ -13,7 +13,7 @@ function EpubImage({ src, alt, imageKey, scope }: { src: string; alt: string; im
   return <AnnotatedImage imageKey={imageKey} scope={scope} className="epub-image" src={src} alt={alt} decoding="async" onError={() => setFailed(true)} />;
 }
 
-export function Markdown({ text, anchors = [], resourceBookId, imageScope = 'document' }: { text: string; anchors?: ChapterAnchor[]; resourceBookId?: string; imageScope?: string }) {
+export const Markdown = memo(function Markdown({ text, anchors = [], resourceBookId, imageScope = 'document' }: { text: string; anchors?: ChapterAnchor[]; resourceBookId?: string; imageScope?: string }) {
   return <ReactMarkdown
     urlTransform={(url, key, node) => key === 'src' && node.tagName === 'img' && resourceBookId && url.startsWith('epub-resource:') ? url : defaultUrlTransform(url)}
     remarkPlugins={[remarkGfm]}
@@ -40,4 +40,4 @@ export function Markdown({ text, anchors = [], resourceBookId, imageScope = 'doc
       },
     }}
   >{text}</ReactMarkdown>;
-}
+});
