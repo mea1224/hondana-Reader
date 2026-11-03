@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write  # 【修改】从 read 改为 write，以便后续能正常发布 Release 或管理产物
+  contents: write  # 必须为 write，否则无法自动创建 Release 和上传资产
 
 concurrency:
   group: desktop-build-${{ github.workflow }}-${{ github.ref }}
@@ -141,3 +141,29 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
+
+  # 【新增】用于汇总所有平台产物并自动发布 GitHub Release 的任务
+  release:
+    needs: package
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') # 只有推送 Tag 时才执行发布
+    steps:
+      - name: Download all matrix build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-artifacts
+
+      - name: Flatten artifact directories
+        run: |
+          mkdir -p final_release
+          find all-artifacts -mindepth 2 -type f -exec cp {} final_release/ \;
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: final_release/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
