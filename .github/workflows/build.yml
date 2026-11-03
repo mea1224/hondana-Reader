@@ -1,40 +1,143 @@
 name: Build hondana Reader
+
 on:
   push:
+    branches: [ "main", "master" ]
     tags: ['v*']
   workflow_dispatch:
+
+permissions:
+  contents: write  # 【修改】从 read 改为 write，以便后续能正常发布 Release 或管理产物
+
+concurrency:
+  group: desktop-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: 'true'
+  NEXT_TELEMETRY_DISABLED: '1'
+  CARGO_TERM_COLOR: always
+  CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+  # GitHub runners download directly from the official Electron releases.
+  ELECTRON_MIRROR: https://github.com/electron/electron/releases/download/
+
 jobs:
   package:
+    name: ${{ matrix.platform }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-15
-            target: aarch64-apple-darwin
-          - os: macos-15-intel
-            target: x86_64-apple-darwin
-          - os: windows-2022
+          - platform: Windows
+            os: windows-2022
+            arch: x64
+            node-platform: win32
             target: x86_64-pc-windows-msvc
-    runs-on: ${{ matrix.os }}
+            builder-args: --win nsis --x64
+          - platform: Linux
+            os: ubuntu-22.04
+            arch: x64
+            node-platform: linux
+            target: x86_64-unknown-linux-gnu
+            builder-args: --linux AppImage tar.gz --x64
+          - platform: macOS
+            os: macos-15
+            arch: arm64
+            node-platform: darwin
+            target: aarch64-apple-darwin
+            builder-args: --mac dmg zip --arm64
+          - platform: macOS
+            os: macos-15-intel
+            arch: x64
+            node-platform: darwin
+            target: x86_64-apple-darwin
+            builder-args: --mac dmg zip --x64
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '22'
+          architecture: ${{ matrix.arch }}
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: stable
           targets: ${{ matrix.target }}
-      - run: npm ci --ignore-scripts
-      - run: npm run electron:install
-      - run: npm run pdfium:download
-      - run: npm run native:build -- --release
-      - run: npm run native:test
-      - run: npm run build
-      - run: npm run check
-      - run: npx electron-builder --publish never
-      - uses: actions/upload-artifact@v4
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
         with:
-          name: hondana-reader-${{ matrix.target }}
-          path: release/*
+          workspaces: rust-core -> target
+          key: ${{ matrix.target }}
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential pkg-config libfuse2
+
+      # build-native.mjs and the PDFium downloader both use the host architecture.
+      - name: Verify native build platform
+        env:
+          EXPECTED_PLATFORM: ${{ matrix.node-platform }}
+          EXPECTED_ARCH: ${{ matrix.arch }}
+          EXPECTED_RUST_HOST: ${{ matrix.target }}
+        run: >-
+          node -e "const {execFileSync}=require('node:child_process');
+          if(process.platform!==process.env.EXPECTED_PLATFORM || process.arch!==process.env.EXPECTED_ARCH)
+          throw new Error('Node platform/architecture does not match the package target');
+          const rust=execFileSync('rustc',['-vV'],{encoding:'utf8'});
+          if(!rust.includes('host: '+process.env.EXPECTED_RUST_HOST))
+          throw new Error('Rust host does not match the package target');
+          console.log(process.platform,process.arch);console.log(rust);"
+
+      - name: Install npm dependencies
+        run: npm ci --ignore-scripts
+
+      # Avoid electron:install's local mirror override on GitHub runners.
+      - name: Install Electron
+        run: node node_modules/electron/install.js
+
+      - name: Download and verify PDFium
+        run: npm run pdfium:download
+
+      - name: Build native module (release)
+        run: npm run native:build -- --release
+
+      - name: Test native module
+        run: npm run native:test
+
+      # Build the native module first so storage tests run instead of being skipped.
+      - name: Typecheck and test
+        run: npm run check
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Package desktop application
+        run: >-
+          npx --no-install electron-builder ${{ matrix.builder-args }}
+          --publish never
+          --config.electronDownload.mirror=https://github.com/electron/electron/releases/download/
+
+      - name: Upload installers and archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: hondana-reader-${{ matrix.node-platform }}-${{ matrix.arch }}
+          path: |
+            release/*.exe
+            release/*.AppImage
+            release/*.tar.gz
+            release/*.dmg
+            release/*.zip
           if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

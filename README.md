@@ -128,6 +128,21 @@ Linux 原生模块和 PDFium 按当前 CPU 架构构建。运行打包程序时�
 - macOS 目标为 DMG、ZIP；Windows 目标为 NSIS；Linux 可通过 electron-builder 参数生成 AppImage 或 deb。
 - `npm run dist` 的完整脚本等价于依次下载 PDFium、Release 构建原生模块、构建前端和运行 electron-builder。
 
+## GitHub Actions 构建
+
+[构建工作流](.github/workflows/build.yml) 在推送 `v*` 标签或手动触发时运行。在 GitHub 仓库的 **Actions → Build hondana Reader → Run workflow** 中可手动开始构建。
+
+| 平台 | 架构 | 安装包 / 压缩包 | Actions 产物名 |
+| --- | --- | --- | --- |
+| Windows | x64 | NSIS `.exe` | `hondana-reader-win32-x64` |
+| Linux | x64 | `.AppImage`、`.tar.gz` | `hondana-reader-linux-x64` |
+| macOS | Apple Silicon / arm64 | `.dmg`、`.zip` | `hondana-reader-darwin-arm64` |
+| macOS | Intel / x64 | `.dmg`、`.zip` | `hondana-reader-darwin-x64` |
+
+四个任务分别在对应系统和架构上编译 Rust 核心、下载并校验 PDFium、执行测试、构建前端及打包。流程使用 Node.js 22 和 Rust stable，缓存 npm 下载及 Rust 编译结果。Linux 使用 Ubuntu 22.04 构建。
+
+构建完成后，在该次运行的 **Artifacts** 区域下载安装包，产物保留 14 天。流程无需配置签名密钥，不执行开发者证书签名或 macOS 公证，也不会自动发布 GitHub Release；即使通过版本标签触发，产物仍上传到 Actions Artifacts。
+
 ## 常用命令
 
 | 命令 | 用途 |
