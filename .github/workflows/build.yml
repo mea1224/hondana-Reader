@@ -35,7 +35,7 @@ jobs:
             arch: x64
             node-platform: win32
             target: x86_64-pc-windows-msvc
-            builder-args: --win nsis --x64
+            builder-args: --win nsis zip --x64
           - platform: Linux
             os: ubuntu-22.04
             arch: x64
@@ -48,12 +48,6 @@ jobs:
             node-platform: darwin
             target: aarch64-apple-darwin
             builder-args: --mac dmg zip --arm64
-          - platform: macOS
-            os: macos-15-intel
-            arch: x64
-            node-platform: darwin
-            target: x86_64-apple-darwin
-            builder-args: --mac dmg zip --x64
 
     steps:
       - name: Check out source
