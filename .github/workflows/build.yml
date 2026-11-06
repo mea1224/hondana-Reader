@@ -128,6 +128,20 @@ jobs:
           --publish never
           --config.electronDownload.mirror=https://github.com/electron/electron/releases/download/
 
+      - name: Name macOS packages by architecture
+        if: matrix.node-platform == 'darwin'
+        env:
+          MAC_ARCH_LABEL: ${{ matrix.arch == 'x64' && 'x86-64' || 'arm64' }}
+        run: |
+          for file in release/*.dmg release/*.zip; do
+            [[ -f "$file" ]] || continue
+            base="${file%.*}"
+            extension="${file##*.}"
+            base="${base%-x64}"
+            base="${base%-arm64}"
+            mv -- "$file" "${base}-${MAC_ARCH_LABEL}.${extension}"
+          done
+
       - name: Upload installers and archives
         uses: actions/upload-artifact@v4
         with:

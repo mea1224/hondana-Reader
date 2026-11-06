@@ -24,6 +24,7 @@ function handle(channel, handler) { ipcMain.handle(channel, (event, ...args) => 
 function windowState() { return { maximized: mainWindow.isMaximized(), fullscreen: mainWindow.isFullScreen() }; }
 function createWindow() {
   mainWindow = new BrowserWindow({ width: 1440, height: 920, minWidth: 800, minHeight: 600, title: 'hondana Reader', icon: path.join(__dirname, 'icon.png'), frame: false, roundedCorners: true, transparent: true, backgroundColor: '#00000000', webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true } });
+  mainWindow.setAspectRatio(1440 / 920);
   mainWindow.setMenuBarVisibility(false);
   for (const event of ['maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) {
     mainWindow.on(event, () => mainWindow.webContents.send('window:state-changed', windowState()));
